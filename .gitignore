@@ -1,0 +1,24 @@
+# Build output
+build/
+dist/
+
+# Xcode
+xcuserdata/
+*.xcworkspace
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# IDE
+.idea/
+.vscode/
+
+.sid
