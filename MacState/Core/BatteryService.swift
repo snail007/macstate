@@ -41,15 +41,48 @@ final class BatteryService {
 
     private init() {}
 
+    private func powerSourceDescription() -> [String: Any]? {
+        let psInfo = IOPSCopyPowerSourcesInfo().takeRetainedValue()
+        let psList = IOPSCopyPowerSourcesList(psInfo).takeRetainedValue() as [CFTypeRef]
+        for ps in psList {
+            guard let desc = IOPSGetPowerSourceDescription(psInfo, ps)?.takeUnretainedValue() as? [String: Any],
+                  let type = desc[kIOPSTypeKey] as? String,
+                  type == kIOPSInternalBatteryType else {
+                continue
+            }
+            return desc
+        }
+        return nil
+    }
+
     static var hasBattery: Bool {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
-        if service == 0 { return false }
-        IOObjectRelease(service)
-        return true
+        if service != 0 {
+            IOObjectRelease(service)
+            return true
+        }
+        return shared.powerSourceDescription() != nil
     }
 
     func info() -> BatteryInfo {
         var result = BatteryInfo()
+        let psDesc = powerSourceDescription()
+
+        if let psDesc {
+            result.isAvailable = true
+            if let state = psDesc[kIOPSPowerSourceStateKey] as? String {
+                result.isPluggedIn = (state == kIOPSACPowerValue)
+            }
+            if let charging = psDesc[kIOPSIsChargingKey] as? Bool {
+                result.isCharging = charging
+            }
+            if let cap = psDesc[kIOPSCurrentCapacityKey] as? Int {
+                result.uiPercentage = cap
+            }
+            if let current = psDesc["Current"] as? Int {
+                result.amperage = current
+            }
+        }
 
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
         guard service != 0 else { return result }
@@ -60,32 +93,26 @@ final class BatteryService {
               let dict = props?.takeRetainedValue() as? [String: Any] else { return result }
 
         result.isAvailable = true
-        result.isCharging = dict["IsCharging"] as? Bool ?? false
-        result.isPluggedIn = dict["ExternalConnected"] as? Bool ?? false
-        result.voltage = dict["Voltage"] as? Int ?? 0
+        result.isCharging = dict["IsCharging"] as? Bool ?? result.isCharging
+        result.isPluggedIn = dict["ExternalConnected"] as? Bool ?? result.isPluggedIn
+        result.voltage = dict["Voltage"] as? Int
+            ?? dict["AppleRawBatteryVoltage"] as? Int
+            ?? result.voltage
         // Prefer AppleRawMaxCapacity/AppleRawCurrentCapacity (always mAh).
         // On older Intel Macs, MaxCapacity/CurrentCapacity return percentage (0-100)
         // instead of mAh, which breaks health calculation.
         result.currentCapacity = dict["AppleRawCurrentCapacity"] as? Int
-            ?? dict["CurrentCapacity"] as? Int ?? 0
+            ?? dict["CurrentCapacity"] as? Int
+            ?? result.currentCapacity
         result.maxCapacity = dict["AppleRawMaxCapacity"] as? Int
-            ?? dict["MaxCapacity"] as? Int ?? 1
-        result.designCapacity = dict["DesignCapacity"] as? Int ?? 1
-        result.cycleCount = dict["CycleCount"] as? Int ?? 0
+            ?? dict["MaxCapacity"] as? Int
+            ?? max(result.maxCapacity, 1)
+        result.designCapacity = dict["DesignCapacity"] as? Int ?? max(result.designCapacity, 1)
+        result.cycleCount = dict["CycleCount"] as? Int ?? result.cycleCount
 
         if let batteryData = dict["BatteryData"] as? [String: Any],
            let uiSoc = batteryData["UISoc"] as? Int {
             result.uiPercentage = uiSoc
-        } else {
-            let psInfo = IOPSCopyPowerSourcesInfo().takeRetainedValue()
-            let psList = IOPSCopyPowerSourcesList(psInfo).takeRetainedValue() as [CFTypeRef]
-            for ps in psList {
-                if let desc = IOPSGetPowerSourceDescription(psInfo, ps)?.takeUnretainedValue() as? [String: Any],
-                   let cap = desc["Current Capacity"] as? Int {
-                    result.uiPercentage = cap
-                    break
-                }
-            }
         }
 
         if let n = dict["InstantAmperage"] as? NSNumber {
@@ -110,7 +137,16 @@ final class BatteryService {
             result.chargingVoltage = chargerData["ChargingVoltage"] as? Int ?? 0
         }
 
-        if let pdtr = SMCService.shared.readKey("PDTR"), pdtr > 0 {
+        // Some machines report ExternalConnected = No in AppleSmartBattery while IOPS
+        // correctly reports AC Power. Prefer the power-source view when it says AC.
+        if let state = psDesc?[kIOPSPowerSourceStateKey] as? String, state == kIOPSACPowerValue {
+            result.isPluggedIn = true
+        }
+
+        // Only read adapter power (PDTR) when actually plugged in.
+        // On some Macs PDTR returns a small residual value (~0.01–0.04 W) on battery,
+        // which would incorrectly replace powerWatts and cause the display to show "--".
+        if result.isPluggedIn, let pdtr = SMCService.shared.readKey("PDTR"), pdtr > 0 {
             result.adapterPowerWatts = pdtr
         }
 

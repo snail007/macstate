@@ -111,6 +111,7 @@ final class MonitorManager: ObservableObject {
                 if let bat {
                     if bat.percentage != self.batteryInfo.percentage ||
                        bat.isCharging != self.batteryInfo.isCharging ||
+                       bat.isPluggedIn != self.batteryInfo.isPluggedIn ||
                        Int(bat.adapterPowerWatts * 10) != Int(self.batteryInfo.adapterPowerWatts * 10) ||
                        Int(bat.powerWatts * 10) != Int(self.batteryInfo.powerWatts * 10) {
                         self.batteryInfo = bat
