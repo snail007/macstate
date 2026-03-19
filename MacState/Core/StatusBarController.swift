@@ -177,7 +177,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
             var actualIconW = iconSize
             if iconName == "_battery_custom_" {
-                actualIconW = iconSize * 1.5
+                actualIconW = 22 + 3  // batteryBodyW + batteryCapW, must match drawing code
             } else if let iconImage = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)?
                 .withSymbolConfiguration(iconConfig) {
                 let rawSize = iconImage.size
@@ -248,46 +248,65 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 var actualIconW = iconSize
 
                 if iconName == "_battery_custom_" {
-                    let batteryW = iconSize * 1.5
-                    let batteryH = iconSize * 0.7
+                    let batteryH: CGFloat = 11
+                    let bodyW: CGFloat = 22
+                    let capW: CGFloat = 3
+                    let capH = batteryH * 0.5
+                    let batteryW = bodyW + capW
                     let iconY = (barHeight - batteryH) / 2
-                    let bodyW = batteryW - 2
-                    let capW: CGFloat = 2
-                    let capH = batteryH * 0.4
                     let lineW: CGFloat = 1.0
                     let bodyRect = NSRect(x: x, y: iconY, width: bodyW, height: batteryH)
 
-                    let bodyPath = NSBezierPath(roundedRect: bodyRect, xRadius: 1.5, yRadius: 1.5)
+                    // Battery outline
+                    let bodyPath = NSBezierPath(roundedRect: bodyRect, xRadius: 3.5, yRadius: 3.5)
                     bodyPath.lineWidth = lineW
                     NSColor.labelColor.setStroke()
                     bodyPath.stroke()
 
+                    // Battery cap (positive terminal)
                     let capX = x + bodyW
                     let capY = iconY + (batteryH - capH) / 2
                     let capRect = NSRect(x: capX, y: capY, width: capW, height: capH)
-                    let capPath = NSBezierPath(roundedRect: capRect, xRadius: 0.5, yRadius: 0.5)
+                    let capPath = NSBezierPath(roundedRect: capRect, xRadius: 1.5, yRadius: 1.5)
                     NSColor.labelColor.setFill()
                     capPath.fill()
 
+                    let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                    let depleteColor: NSColor = NSColor(white: 0.82, alpha: 1)
+                    let textColor: NSColor = isDark ? NSColor(white: 0.45, alpha: 1) : .white
+
                     let pct = CGFloat(max(0, min(100, self.pendingBatteryPercent))) / 100.0
-                    let inset: CGFloat = lineW + 0.5
+                    let inset: CGFloat = 0
                     let fillMaxW = bodyW - inset * 2
                     let fillW = fillMaxW * pct
+                    let innerRect = NSRect(x: x + inset, y: iconY + inset, width: fillMaxW, height: batteryH - inset * 2)
+
+                    // Depleted area (light gray, fills right up to the border)
+                    let depletePath = NSBezierPath(roundedRect: innerRect, xRadius: 3, yRadius: 3)
+                    depleteColor.setFill()
+                    depletePath.fill()
+
+                    // Charged area (labelColor, same as outline)
                     if fillW > 0 {
-                        let fillRect = NSRect(
-                            x: x + inset,
-                            y: iconY + inset,
-                            width: fillW,
-                            height: batteryH - inset * 2
-                        )
-                        let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: 0.5, yRadius: 0.5)
+                        let fillRect = NSRect(x: x + inset, y: iconY + inset, width: fillW, height: batteryH - inset * 2)
+                        let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: 3, yRadius: 3)
                         NSColor.labelColor.setFill()
                         fillPath.fill()
                     }
 
+                    // Percentage number in single contrasting color
+                    let pctText = "\(self.pendingBatteryPercent)"
+                    let pctFont = NSFont.monospacedDigitSystemFont(ofSize: round(batteryH * 0.80), weight: .bold)
+                    let textSize = (pctText as NSString).size(withAttributes: [.font: pctFont])
+                    let textOrigin = NSPoint(
+                        x: x + (bodyW - textSize.width) / 2,
+                        y: iconY + (batteryH - textSize.height) / 2
+                    )
+                    (pctText as NSString).draw(at: textOrigin, withAttributes: [.font: pctFont, .foregroundColor: textColor])
+
                     actualIconW = batteryW
                 } else if let iconImage = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)?
-                    .withSymbolConfiguration(self.iconConfig) {
+                    .withSymbolConfiguration(self.iconConfig.applying(NSImage.SymbolConfiguration(paletteColors: [.labelColor]))) {
                     let rawSize = iconImage.size
                     let drawW: CGFloat
                     let drawH: CGFloat
@@ -347,7 +366,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             return true
         }
 
-        image.isTemplate = true
+        image.isTemplate = false
 
         if metricsItem.length != totalWidth {
             metricsItem.length = totalWidth
