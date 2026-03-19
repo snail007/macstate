@@ -31,6 +31,7 @@ Lightweight macOS menu bar system monitor. All metrics are merged into a single 
 - **GPU Usage** — Multi-GPU support (integrated/discrete), status bar shows peak utilization, tooltip shows per-GPU usage
 - **GPU Temperature** — IOAccelerator + SMC readout, tooltip shows per-GPU temperature
 - **Charging Power** — Real-time charger wattage, click for battery details (charger info, battery power, current, voltage, level, cycle count, health)
+- **Battery Percentage** — Shows percentage inside battery icon when on battery power, auto-adapts to dark/light mode
 - **Dedicated Settings Entry** — Persistent settings icon in menu bar, click to open settings panel
 - **Chinese/English** — Default Chinese, switchable, panel titles and content update in real-time
 - **Launch at Login** — Based on SMAppService

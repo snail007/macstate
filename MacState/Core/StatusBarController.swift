@@ -250,7 +250,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 if iconName == "_battery_custom_" {
                     let batteryH: CGFloat = 11
                     let bodyW: CGFloat = 22
-                    let capW: CGFloat = 3
+                    let capW: CGFloat = 1.5
                     let capH = batteryH * 0.5
                     let batteryW = bodyW + capW
                     let iconY = (barHeight - batteryH) / 2
@@ -271,37 +271,40 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                     NSColor.labelColor.setFill()
                     capPath.fill()
 
-                    let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                    let depleteColor: NSColor = NSColor(white: 0.82, alpha: 1)
-                    let textColor: NSColor = isDark ? NSColor(white: 0.45, alpha: 1) : .white
+                    // Detect actual menu bar appearance via button (not NSApp which reflects system setting)
+                    let isDark = button.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
 
                     let pct = CGFloat(max(0, min(100, self.pendingBatteryPercent))) / 100.0
-                    let inset: CGFloat = 0
+                    let inset: CGFloat = lineW
                     let fillMaxW = bodyW - inset * 2
                     let fillW = fillMaxW * pct
                     let innerRect = NSRect(x: x + inset, y: iconY + inset, width: fillMaxW, height: batteryH - inset * 2)
+                    let cornerR: CGFloat = 2.5
 
-                    // Depleted area (light gray, fills right up to the border)
-                    let depletePath = NSBezierPath(roundedRect: innerRect, xRadius: 3, yRadius: 3)
-                    depleteColor.setFill()
+                    // Depleted area background (semi-transparent labelColor)
+                    let depletePath = NSBezierPath(roundedRect: innerRect, xRadius: cornerR, yRadius: cornerR)
+                    NSColor.labelColor.withAlphaComponent(0.45).setFill()
                     depletePath.fill()
 
-                    // Charged area (labelColor, same as outline)
+                    // Charged area fill
                     if fillW > 0 {
                         let fillRect = NSRect(x: x + inset, y: iconY + inset, width: fillW, height: batteryH - inset * 2)
-                        let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: 3, yRadius: 3)
+                        let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: cornerR, yRadius: cornerR)
                         NSColor.labelColor.setFill()
                         fillPath.fill()
                     }
 
-                    // Percentage number in single contrasting color
                     let pctText = "\(self.pendingBatteryPercent)"
-                    let pctFont = NSFont.monospacedDigitSystemFont(ofSize: round(batteryH * 0.80), weight: .bold)
+                    let pctFont = NSFont.monospacedDigitSystemFont(ofSize: round(batteryH * 0.72), weight: .bold)
                     let textSize = (pctText as NSString).size(withAttributes: [.font: pctFont])
                     let textOrigin = NSPoint(
                         x: x + (bodyW - textSize.width) / 2,
                         y: iconY + (batteryH - textSize.height) / 2
                     )
+                    // contrast against labelColor fill: dark text on light fill, light text on dark fill
+                    let textColor: NSColor = isDark
+                        ? NSColor.black.withAlphaComponent(0.65)
+                        : NSColor.white.withAlphaComponent(0.85)
                     (pctText as NSString).draw(at: textOrigin, withAttributes: [.font: pctFont, .foregroundColor: textColor])
 
                     actualIconW = batteryW
