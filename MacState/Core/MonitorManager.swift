@@ -53,6 +53,9 @@ final class MonitorManager: ObservableObject {
         migrateOldSettings()
         loadInterval()
         startMonitoring()
+        DispatchQueue.global(qos: .utility).async {
+            _ = ProcessCPUService.shared
+        }
     }
 
     // MARK: - Refresh Interval

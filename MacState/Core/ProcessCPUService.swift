@@ -106,9 +106,9 @@ final class ProcessCPUService {
     private func resolveProcess(pid: pid_t) -> (name: String, icon: NSImage?, command: String) {
         let app = NSRunningApplication(processIdentifier: pid)
         let icon = app?.icon
+        let command = processArgs(pid: pid)
 
         if let localizedName = app?.localizedName, !localizedName.isEmpty {
-            let command = processPath(pid: pid)
             return (name: localizedName, icon: icon, command: command)
         }
 
@@ -116,12 +116,65 @@ final class ProcessCPUService {
         if !path.isEmpty {
             let lastComponent = (path as NSString).lastPathComponent
             if !lastComponent.isEmpty {
-                return (name: lastComponent, icon: icon, command: path)
+                return (name: lastComponent, icon: icon, command: command)
             }
         }
 
         let name = processName(pid: pid)
-        return (name: name, icon: icon, command: path)
+        return (name: name, icon: icon, command: command)
+    }
+
+    private func processArgs(pid: pid_t) -> String {
+        // Use sysctl KERN_PROCARGS2 to get full command line (path + arguments)
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, Int32(pid)]
+        var size: Int = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else {
+            return processPath(pid: pid)
+        }
+
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else {
+            return processPath(pid: pid)
+        }
+
+        // First 4 bytes = argc (number of arguments)
+        guard size > MemoryLayout<Int32>.size else {
+            return processPath(pid: pid)
+        }
+        var argc: Int32 = 0
+        memcpy(&argc, &buffer, MemoryLayout<Int32>.size)
+
+        // Skip argc, then skip exec_path (null-terminated), then skip padding nulls
+        var offset = MemoryLayout<Int32>.size
+
+        // Skip exec_path
+        while offset < size && buffer[offset] != 0 { offset += 1 }
+        // Skip null terminators between exec_path and argv[0]
+        while offset < size && buffer[offset] == 0 { offset += 1 }
+
+        // Now read argc arguments, each null-terminated
+        var args: [String] = []
+        var count: Int32 = 0
+        while count < argc && offset < size {
+            let start = offset
+            while offset < size && buffer[offset] != 0 { offset += 1 }
+            if offset > start {
+                let arg = buffer[start..<offset].withUnsafeBufferPointer {
+                    String(bytes: $0, encoding: .utf8) ?? ""
+                }
+                if !arg.isEmpty {
+                    args.append(arg)
+                }
+            }
+            offset += 1 // skip null terminator
+            count += 1
+        }
+
+        if args.isEmpty {
+            return processPath(pid: pid)
+        }
+
+        return args.joined(separator: " ")
     }
 
     private func processPath(pid: pid_t) -> String {
