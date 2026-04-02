@@ -93,11 +93,31 @@ final class BatteryService {
               let dict = props?.takeRetainedValue() as? [String: Any] else { return result }
 
         result.isAvailable = true
-        result.isCharging = dict["IsCharging"] as? Bool ?? result.isCharging
         result.isPluggedIn = dict["ExternalConnected"] as? Bool ?? result.isPluggedIn
-        result.voltage = dict["Voltage"] as? Int
-            ?? dict["AppleRawBatteryVoltage"] as? Int
-            ?? result.voltage
+
+        // Parse BatteryData early — newer macOS moves real values here
+        // while top-level fields (Voltage, CycleCount, Amperage, etc.) return 0.
+        let batteryData = dict["BatteryData"] as? [String: Any]
+
+        if let batteryData, let uiSoc = batteryData["UISoc"] as? Int {
+            result.uiPercentage = uiSoc
+        }
+
+        // IsCharging: top-level may report No even while charging.
+        // Fallback: if InstantAmperage > 0 and plugged in, treat as charging.
+        let topIsCharging = dict["IsCharging"] as? Bool ?? result.isCharging
+        result.isCharging = topIsCharging
+
+        // Voltage: top-level → AppleRawBatteryVoltage → BatteryData.Voltage
+        let topVoltage = dict["Voltage"] as? Int ?? 0
+        if topVoltage > 0 {
+            result.voltage = topVoltage
+        } else if let rawV = dict["AppleRawBatteryVoltage"] as? Int, rawV > 0 {
+            result.voltage = rawV
+        } else if let bdV = batteryData?["Voltage"] as? Int, bdV > 0 {
+            result.voltage = bdV
+        }
+
         // Prefer AppleRawMaxCapacity/AppleRawCurrentCapacity (always mAh).
         // On older Intel Macs, MaxCapacity/CurrentCapacity return percentage (0-100)
         // instead of mAh, which breaks health calculation.
@@ -108,17 +128,26 @@ final class BatteryService {
             ?? dict["MaxCapacity"] as? Int
             ?? max(result.maxCapacity, 1)
         result.designCapacity = dict["DesignCapacity"] as? Int ?? max(result.designCapacity, 1)
-        result.cycleCount = dict["CycleCount"] as? Int ?? result.cycleCount
 
-        if let batteryData = dict["BatteryData"] as? [String: Any],
-           let uiSoc = batteryData["UISoc"] as? Int {
-            result.uiPercentage = uiSoc
+        // CycleCount: top-level → BatteryData.CycleCount
+        let topCycle = dict["CycleCount"] as? Int ?? 0
+        if topCycle > 0 {
+            result.cycleCount = topCycle
+        } else if let bdCycle = batteryData?["CycleCount"] as? Int, bdCycle > 0 {
+            result.cycleCount = bdCycle
         }
 
+        // Amperage: InstantAmperage → Amperage (top-level may be 0)
         if let n = dict["InstantAmperage"] as? NSNumber {
             result.amperage = Int(Int16(truncatingIfNeeded: n.int64Value))
         } else if let n = dict["Amperage"] as? NSNumber {
             result.amperage = Int(Int16(truncatingIfNeeded: n.int64Value))
+        }
+
+        // Fix IsCharging: if top-level says No but amperage > 0 and plugged in,
+        // the battery is actually charging.
+        if !result.isCharging && result.isPluggedIn && result.amperage > 0 {
+            result.isCharging = true
         }
 
         if let adapterDetails = dict["AdapterDetails"] as? [String: Any] {

@@ -1,5 +1,14 @@
 # Changelog
 
+## [v1.7.0] - 2026-04-02
+
+### 修复 / Fixed
+
+- **电池数据显示异常** — 修复新版 macOS 下电池功率 0.0W、电压 0.0V、循环次数 0 的问题。新版 macOS 将 Voltage、CycleCount 等字段迁移至 BatteryData 子字典，顶层字段返回 0，现已增加 fallback 读取
+- **充电状态误判** — 修复 IsCharging 报 No 但实际在充电的问题，通过 InstantAmperage 正数 + 插电状态综合判断
+
+---
+
 ## [v1.6.0] - 2026-03-21
 
 ### 优化 / Improved
